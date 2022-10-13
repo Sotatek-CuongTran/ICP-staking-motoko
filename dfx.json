@@ -4,6 +4,10 @@
       "main": "src/hello_backend/main.mo",
       "type": "motoko"
     },
+    "staking": {
+      "main": "src/staking/main.mo",
+      "type": "motoko"
+    },
     "hello_frontend": {
       "dependencies": [
         "hello_backend"
@@ -16,12 +20,20 @@
         "dist/hello_frontend/"
       ],
       "type": "assets"
+    },
+    "ledger": {
+      "type": "custom",
+      "wasm": "ledger.wasm",
+      "candid": "ledger.public.did"
     }
   },
   "defaults": {
     "build": {
       "args": "",
       "packtool": ""
+    },
+    "replica": {
+      "subnet_type":"system"
     }
   },
   "dfx": "0.11.2",
