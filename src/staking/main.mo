@@ -1,7 +1,6 @@
 import HashMap "mo:base/HashMap";
 import Principal "mo:base/Principal";
 import Text "mo:base/Text";
-import Interfaces "./interfaces";
 import Error "mo:base/Error";
 import Blob "mo:base/Blob";
 import Time "mo:base/Time";
@@ -9,11 +8,15 @@ import Nat64 "mo:base/Nat64";
 import Int "mo:base/Int";
 import Debug "mo:base/Debug";
 
-actor Staking {
+import Account "./Account";
+import Interfaces "./Interfaces";
+import LedgerInterface "./LedgerInterface";
 
-  stable var acceptedToken = "sgymv-uiaaa-aaaaa-aaaia-cai";
-  stable var rewardToken = "sgymv-uiaaa-aaaaa-aaaia-cai";
-  stable var rewardDistributor = "";
+actor Staking {
+  var acceptedToken = "sgymv-uiaaa-aaaaa-aaaia-cai";
+  var rewardToken = "sgymv-uiaaa-aaaaa-aaaia-cai";
+  var ledger : LedgerInterface.ILedger = actor ("qoctq-giaaa-aaaaa-aaaea-cai");
+  var rewardDistributor = "";
   stable var APR = 50; // 50 / ONE_HUNDRED = 50 / 10000 = 0.5%
 
   stable let ONE_YEAR_IN_SECOND = 86400 * 365;
@@ -60,6 +63,96 @@ actor Staking {
     // transfer token to this wallet
     let acceptedTokenInstance : Interfaces.Token = actor (acceptedToken);
     ignore await acceptedTokenInstance.transferFrom(msg.caller, Principal.fromActor(Staking), amount);
+  };
+
+  public shared (msg) func stakeWithICP(amount : Nat) : async () {
+    if (acceptedToken != "") {
+      throw Error.reject("Not allow to stake ICP");
+    };
+
+    // check anonymous
+    if (isAnonymous(msg.caller)) {
+      throw Error.reject("anonymous user is not allowed to transfer funds");
+    };
+
+    let test : ?LedgerInterface.SubAccount = ?Account.accountIdentifier(Principal.fromActor(Staking), Account.principalToSubaccount(msg.caller));
+    Debug.print("===================");
+    Debug.print("======== " # debug_show test);
+    ignore await _claim(msg.caller);
+
+    // get ICP and send to this canister
+    let balanceBefore = await ledger.account_balance({ account = myAccountId() });
+
+    let now = Time.now();
+    let res = await ledger.transfer({
+      memo = 0;
+      from_subaccount = test;
+      to = Account.accountIdentifier(me(), Account.defaultSubaccount());
+      amount = { e8s = Nat64.fromNat(amount) };
+      fee = { e8s = 0 };
+      created_at_time = ?{ timestamp_nanos = Nat64.fromNat(Int.abs(now)) };
+    });
+    switch (res) {
+      case (#Ok(blockIndex)) {
+        Debug.print("Paid reward to " # debug_show me() # " in block " # debug_show blockIndex);
+      };
+      case (#Err(#InsufficientFunds { balance })) {
+        throw Error.reject("Top me up! The balance is only " # debug_show balance # " e8s");
+      };
+      case (#Err(other)) {
+        throw Error.reject("Unexpected error: " # debug_show other);
+      };
+    };
+
+    let balanceAfter : LedgerInterface.Tokens = await ledger.account_balance({
+      account = myAccountId();
+    });
+
+    if (Nat64.toNat(balanceAfter.e8s) - Nat64.toNat(balanceBefore.e8s) != amount) return;
+
+    // increase stakeAmount
+    let oldBalance = _balanceOf(msg.caller);
+    balances.put(msg.caller, oldBalance + amount);
+  };
+
+  public func getICPBalance() : async LedgerInterface.Tokens {
+    await ledger.account_balance({ account = myAccountId() });
+  };
+
+  public shared (msg) func testTransfer(amount : Nat) : async () {
+    let test : ?LedgerInterface.SubAccount = ?Account.principalToSubaccount(msg.caller);
+    let balance = await ledger.account_balance({
+      account = Account.accountIdentifier(Principal.fromActor(Staking), Account.principalToSubaccount(msg.caller));
+    });
+
+    Debug.print("===================" # debug_show balance);
+    Debug.print("======== " # debug_show test);
+
+    let now = Time.now();
+    let res = await ledger.transfer({
+      memo = 0;
+      from_subaccount = test;
+      to = Account.accountIdentifier(me(), Account.defaultSubaccount());
+      amount = { e8s = Nat64.fromNat(amount) };
+      fee = { e8s = 10000 };
+      created_at_time = ?{ timestamp_nanos = Nat64.fromNat(Int.abs(now)) };
+    });
+    switch (res) {
+      case (#Ok(blockIndex)) {
+        Debug.print("Paid reward to " # debug_show me() # " in block " # debug_show blockIndex);
+      };
+      case (#Err(#InsufficientFunds { balance })) {
+        throw Error.reject("Top me up! The balance is only " # debug_show balance # " e8s");
+      };
+      case (#Err(other)) {
+        throw Error.reject("Unexpected error: " # debug_show other);
+      };
+    };
+  };
+
+  // Returns canister's default account identifier as a blob.
+  public query func canisterAccount() : async Account.AccountIdentifier {
+    myAccountId();
   };
 
   public shared (msg) func withdraw(amount : Nat) : async () {
@@ -124,5 +217,24 @@ actor Staking {
   private func _updateTimes(user : Principal) : () {
     let now = Nat64.fromNat(Int.abs(Time.now()));
     updateTimes.put(user, now);
+  };
+
+  // Returns the default account identifier of this canister.
+  private func myAccountId() : Account.AccountIdentifier {
+    Account.accountIdentifier(Principal.fromActor(Staking), Account.defaultSubaccount());
+  };
+
+  // Returns the default account identifier of this canister.
+  private func me() : Principal {
+    Principal.fromActor(Staking);
+  };
+
+  public shared (msg) func getDepositAddress() : async Account.AccountIdentifier {
+    Account.accountIdentifier(Principal.fromActor(Staking), Account.principalToSubaccount(msg.caller));
+  };
+
+  public shared (msg) func getDepositAddressInText() : async Principal {
+    let account : Blob = Account.accountIdentifier(Principal.fromActor(Staking), Account.principalToSubaccount(msg.caller));
+    return Principal.fromBlob(account);
   };
 };

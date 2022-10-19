@@ -5,6 +5,9 @@
       "type": "motoko"
     },
     "staking": {
+      "dependencies": [
+        "ledger"
+      ],
       "main": "src/staking/main.mo",
       "type": "motoko"
     },
