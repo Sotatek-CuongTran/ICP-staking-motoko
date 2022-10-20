@@ -11,6 +11,17 @@
       "main": "src/staking/main.mo",
       "type": "motoko"
     },
+    "event": {
+      "main": "src/event/main.mo",
+      "type": "motoko"
+    },
+    "test_event": {
+      "dependencies": [
+        "event"
+      ],
+      "main": "src/test_event/main.mo",
+      "type": "motoko"
+    },
     "hello_frontend": {
       "dependencies": [
         "hello_backend"
